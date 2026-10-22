@@ -1,58 +1,141 @@
 {
-  "outside": {
-    "left": 25.1,
-    "top": 52.4,
-    "width": 6.4,
-    "height": 8.2,
-    "label": "入口外側"
-  },
-  "command": {
-    "left": 8.0,
-    "top": 48.0,
-    "width": 17.0,
-    "height": 12.0,
-    "label": "2 指揮站"
-  },
-  "safety": {
-    "left": 76.8,
-    "top": 58.4,
-    "width": 13.0,
-    "height": 16.0,
-    "label": "7 安全教室"
-  },
-  "forward": {
-    "left": 7.8,
-    "top": 66.3,
-    "width": 17.0,
-    "height": 15.0,
-    "label": "3 前進指揮所"
-  },
-  "remote": {
-    "left": 63.8,
-    "top": 59.4,
-    "width": 13.0,
-    "height": 15.0,
-    "label": "6 遠距平台"
-  },
-  "hall": {
-    "left": 10.6,
-    "top": 18.7,
-    "width": 40.0,
-    "height": 30.0,
-    "label": "1 訓練場"
-  },
-  "entrance": {
-    "left": 35.6,
-    "top": 55.8,
-    "width": 50.2,
-    "height": 4.0,
-    "label": "入口走廊"
-  },
-  "office": {
-    "left": 36.8,
-    "top": 65.4,
-    "width": 14.0,
-    "height": 13.0,
-    "label": "辦公室"
+  "blocks": [
+    {
+      "id": "hall",
+      "label": "1 訓練場",
+      "left": 10.6,
+      "top": 18.7,
+      "width": 40.0,
+      "height": 30.0
+    },
+    {
+      "id": "command",
+      "label": "2 指揮站",
+      "left": 8.0,
+      "top": 48.0,
+      "width": 17.0,
+      "height": 12.0
+    },
+    {
+      "id": "forward",
+      "label": "3 前進指揮所",
+      "left": 7.8,
+      "top": 66.3,
+      "width": 17.0,
+      "height": 15.0
+    },
+    {
+      "id": "office",
+      "label": "5貴賓室",
+      "left": 36.8,
+      "top": 65.4,
+      "width": 14.0,
+      "height": 13.0
+    },
+    {
+      "id": "remote",
+      "label": "6 遠距平台",
+      "left": 63.8,
+      "top": 59.4,
+      "width": 13.0,
+      "height": 15.0
+    },
+    {
+      "id": "safety",
+      "label": "7 安全教室",
+      "left": 76.8,
+      "top": 58.4,
+      "width": 13.0,
+      "height": 16.0
+    },
+    {
+      "id": "entrance",
+      "label": "走廊",
+      "left": 35.6,
+      "top": 55.8,
+      "width": 50.2,
+      "height": 4.0
+    },
+    {
+      "id": "outside",
+      "label": "電梯入口",
+      "left": 25.1,
+      "top": 52.4,
+      "width": 6.4,
+      "height": 8.2
+    },
+    {
+      "id": "b1",
+      "label": "3樓外其他區域",
+      "left": 72.0,
+      "top": 29.7,
+      "width": 16.0,
+      "height": 12.0
+    }
+  ],
+  "tasks": {
+    "場控": [
+      "hall",
+      "command",
+      "forward",
+      "office"
+    ],
+    "預備人員": [
+      "hall"
+    ],
+    "金級開場前咖啡茶點準備": [
+      "office"
+    ],
+    "簽到處": [
+      "outside"
+    ],
+    "報到及轉場休息貴賓接待": [
+      "office",
+      "hall"
+    ],
+    "拍照攝影": [
+      "hall",
+      "office",
+      "b1"
+    ],
+    "洗照片(如果要)": [
+      "b1"
+    ],
+    "電視牆": [
+      "outside"
+    ],
+    "視訊測試": [
+      "hall"
+    ],
+    "午餐發放": [
+      "forward",
+      "office",
+      "b1"
+    ],
+    "垃圾清運": [
+      "b1",
+      "forward",
+      "office"
+    ],
+    "下午茶準備": [
+      "forward",
+      "office"
+    ],
+    "中巴管控": [
+      "outside",
+      "b1"
+    ],
+    "晚宴先遣準備": [
+      "b1"
+    ],
+    "晚宴座位引導": [
+      "b1"
+    ],
+    "晚宴聲光音效": [
+      "b1"
+    ],
+    "晚宴催菜場控": [
+      "b1"
+    ]
   }
 }

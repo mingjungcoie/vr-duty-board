@@ -167,6 +167,38 @@ main {
 
 main.wide { max-width: none; }
 
+.duty-split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.duty-list { min-width: 0; }
+
+.duty-card {
+  display: block;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  text-align: left;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.duty-card.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.duty-split .plan {
+  position: sticky;
+  top: 68px;
+  margin: 0;
+}
+
 .days {
   display: inline-flex;
   gap: 4px;
@@ -251,6 +283,13 @@ section > h2:first-child { margin-top: 8px; }
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.absent {
+  background: #e5e7eb;
+  color: #4b5563;
+  border-radius: 4px;
+  padding: 0 4px;
 }
 
 /* 表格共用 */
@@ -543,6 +582,10 @@ details li { margin: 4px 0; }
   #copy-link { flex: 1 1 auto; }
 
   main { padding: 10px 10px calc(24px + env(safe-area-inset-bottom)); }
+
+  .duty-split { grid-template-columns: 1fr; }
+
+  .duty-split .plan { position: static; }
 
   .days { display: flex; }
 

@@ -51,7 +51,48 @@ function extractWaffleTable(html) {
   return html.slice(start, end + "</table>".length);
 }
 
-function parseTableRows(tableHtml) {
+function styleColors(html) {
+  const map = new Map();
+  for (const match of html.matchAll(/\.s(\d+)\s*\{([^}]*)\}/g)) {
+    const bg = /background-color:\s*([^;}\s]+)/i.exec(match[2]);
+    if (bg) map.set(`s${match[1]}`, bg[1].toLowerCase());
+  }
+  return map;
+}
+
+function colorChannels(value) {
+  const text = String(value || "").trim().toLowerCase();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(text);
+  if (hex) {
+    const raw = hex[1].length === 3 ? hex[1].split("").map((ch) => ch + ch).join("") : hex[1];
+    const n = Number.parseInt(raw, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const rgb = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/.exec(text);
+  if (!rgb) return null;
+  return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+}
+
+function isAbsentColor(value) {
+  const channels = colorChannels(value);
+  if (!channels) return false;
+  const max = Math.max(...channels);
+  const min = Math.min(...channels);
+  return max - min <= 15 && max <= 230 && min >= 140;
+}
+
+function cellIsAbsent(attrs, colors) {
+  const style = /style="([^"]*)"/i.exec(attrs || "");
+  if (style) {
+    const bg = /background-color:\s*([^;]+)/i.exec(style[1]);
+    if (bg && isAbsentColor(bg[1])) return true;
+  }
+  const cls = /class="([^"]*)"/i.exec(attrs || "");
+  if (!cls) return false;
+  return cls[1].split(/\s+/).some((name) => isAbsentColor(colors.get(name)));
+}
+
+function parseTableRows(tableHtml, colors) {
   const rows = [];
   const rowRe = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
@@ -67,6 +108,7 @@ function parseTableRows(tableHtml) {
         rowspan: Number.isFinite(rowspan) && rowspan > 0 ? rowspan : 1,
         colspan: Number.isFinite(colspan) && colspan > 0 ? colspan : 1,
         text: decodeText(cellMatch[3]),
+        absent: cellIsAbsent(attrs, colors),
       });
     }
     rows.push(cells);
@@ -86,7 +128,7 @@ function buildGrid(rows) {
           grid.set(
             key,
             dr === 0 && dc === 0
-              ? { text: cell.text, rowspan: cell.rowspan, origin: true }
+              ? { text: cell.text, rowspan: cell.rowspan, origin: true, absent: Boolean(cell.absent) }
               : { text: "", rowspan: 0, origin: false },
           );
         }
@@ -108,7 +150,7 @@ function textAt(grid, r, c) {
 
 export function parseSheetHtml(html) {
   const title = sheetTitle(html);
-  const grid = buildGrid(parseTableRows(extractWaffleTable(html)));
+  const grid = buildGrid(parseTableRows(extractWaffleTable(html), styleColors(html)));
 
   let headerRow = -1;
   let personnelCol = -1;
@@ -167,7 +209,11 @@ export function parseSheetHtml(html) {
       const id = idCell.text;
       if (!/^\d+$/.test(id) || seen.has(id)) continue;
       seen.add(id);
-      roster.push({ id, name: nameCell?.text || "" });
+      roster.push({
+        id,
+        name: nameCell?.text || "",
+        absent: Boolean(idCell.absent || nameCell?.absent),
+      });
     }
   }
   roster.sort((a, b) => Number(a.id) - Number(b.id));
@@ -289,6 +335,7 @@ export function findIssues(sheet) {
   }
   const used = new Set(sheet.assignments.flatMap((a) => a.ids));
   const unassigned = sheet.roster.filter((p) => !used.has(p.id));
+  const absent = sheet.roster.filter((p) => p.absent);
 
   const overlaps = [];
   for (const person of sheet.roster) {
@@ -312,5 +359,5 @@ export function findIssues(sheet) {
       }
     }
   }
-  return { unknownIds, unassigned, overlaps };
+  return { unknownIds, unassigned, overlaps, absent };
 }

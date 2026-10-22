@@ -347,3 +347,33 @@ test("合併範圍超過最後一列時，結束時間停在最後一格加一�
 test("沒有人員標題時回報錯誤", () => {
   assert.throws(() => parseSheetHtml('<table class="waffle"><tr><td>8:30</td></tr></table>'), /人員/);
 });
+
+test("名冊灰底代表這天不會去，白底和任務色不算", () => {
+  const html = `<style>
+    .s0{background-color:#ffffff}
+    .s1{background-color:#cccccc}
+    .s2{background-color:#ffff00}
+    .s3{background-color:#fce5cd}
+  </style>
+  <table class="waffle">
+    <tr>
+      <td class="s0">8:30</td><td class="s3">場控</td><td class="s0">人員</td>
+      <td class="s0">1</td><td class="s0">甲</td>
+      <td class="s1">2</td><td class="s1">乙</td>
+    </tr>
+    <tr>
+      <td class="s0">9:30</td><td class="s2">1</td><td></td>
+      <td class="s0">3</td><td class="s1">丙</td>
+      <td class="s3">4</td><td class="s3">丁</td>
+    </tr>
+  </table>`;
+  const sheet = parseSheetHtml(html);
+  const byId = Object.fromEntries(sheet.roster.map((p) => [p.id, p.absent]));
+  assert.equal(byId["1"], false);
+  assert.equal(byId["2"], true);
+  assert.equal(byId["3"], true);
+  assert.equal(byId["4"], false);
+  const issues = findIssues(sheet);
+  assert.deepEqual(issues.absent.map((p) => p.id), ["2", "3"]);
+  assert.deepEqual(issues.unassigned.map((p) => p.id), ["2", "3", "4"]);
+});

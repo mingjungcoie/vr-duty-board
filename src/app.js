@@ -7,10 +7,9 @@ import {
   findIssues,
   formatMin,
   gridRows,
-  timelineRows,
 } from "./parse.js";
 import { placeFor, placeLabel } from "./locations.js";
-import { recordDetailsToggle } from "./open-tasks.js";
+import { recordDetailsToggle, togglePickedTask } from "./open-tasks.js";
 import { moveRect, resizeRect } from "./hotspots.js";
 import {
   parsePlan,
@@ -27,7 +26,6 @@ import { personBlockColor } from "./block-color.js";
 const VIEWS = [
   ["mine", "我的任務"],
   ["grid", "總表"],
-  ["bytask", "依任務"],
   ["now", "現在"],
   ["check", "檢查"],
 ];
@@ -41,6 +39,7 @@ const state = {
   personId: "",
   previewTime: "08:30",
   openTasks: new Set(),
+  pickedTask: "",
   notice: "",
   editing: false,
   plan: null,
@@ -67,14 +66,26 @@ function sheetOf(dayId) {
   return state.sheets?.[dayId] || null;
 }
 
+function personRecord(sheet, id) {
+  return sheet?.roster.find((p) => p.id === id) || null;
+}
+
 function personName(sheet, id) {
-  return sheet?.roster.find((p) => p.id === id)?.name || `編號 ${id}`;
+  return personRecord(sheet, id)?.name || `編號 ${id}`;
+}
+
+function absentDays(id) {
+  return DAYS.filter((day) => sheetOf(day.id)?.roster.some((p) => p.id === id && p.absent));
 }
 
 function namesHtml(sheet, ids) {
   return ids.map((id) => {
-    const cls = id === state.personId ? ' class="me"' : "";
-    return `<span${cls}>${esc(personName(sheet, id))}</span>`;
+    const classes = [];
+    if (id === state.personId) classes.push("me");
+    if (personRecord(sheet, id)?.absent) classes.push("absent");
+    const cls = classes.length ? ` class="${classes.join(" ")}"` : "";
+    const away = personRecord(sheet, id)?.absent ? "（不會去）" : "";
+    return `<span${cls}>${esc(personName(sheet, id))}${away}</span>`;
   }).join("、");
 }
 
@@ -101,6 +112,7 @@ function personUrl() {
 
 function setPerson(id) {
   state.personId = id;
+  state.pickedTask = "";
   if (id) localStorage.setItem("vr-duty-person", id);
   else localStorage.removeItem("vr-duty-person");
   history.replaceState(null, "", personUrl());
@@ -112,7 +124,7 @@ function rosterOptions() {
   if (!sheet) return "";
   const options = sheet.roster.map((p) => {
     const selected = p.id === state.personId ? " selected" : "";
-    return `<option value="${esc(p.id)}"${selected}>${esc(p.id)} ${esc(p.name)}</option>`;
+    return `<option value="${esc(p.id)}"${selected}>${esc(p.id)} ${esc(p.name)}${esc(absentDays(p.id).length ? `（${absentDays(p.id).map((day) => day.label).join("、")}不會去）` : "")}</option>`;
   });
   const blank = state.personId ? "" : " selected";
   return `<option value=""${blank}>選擇你的姓名</option>${options.join("")}`;
@@ -141,47 +153,50 @@ function crewNote(sheet, block) {
   return `同組：${namesHtml(sheet, others)}`;
 }
 
-function renderTimeline(sheet, blocks, live, nowMin) {
-  if (!blocks.length) return '<p class="empty">這天沒有排到任務。</p>';
-  const rows = timelineRows(blocks, sheet.slots);
-  const laneCount = rows[0].cells.length;
-  const nextStart = live
-    ? blocks.filter((b) => b.startMin > nowMin).map((b) => b.startMin).sort((a, b) => a - b)[0] ?? null
-    : null;
-  const head = `<th>時間</th>${Array.from({ length: laneCount }, () => "<th>任務</th>").join("")}`;
-  const body = rows.map((row) => {
-    const cells = row.cells.map((cell) => {
-      if (!cell) return "";
-      if (!cell.task) return "<td></td>";
-      const span = cell.rowspan > 1 ? ` rowspan="${cell.rowspan}"` : "";
-      const on = live && cell.startMin <= nowMin && nowMin < cell.endMin;
-      const next = live && cell.startMin === nextStart;
-      const badge = on ? '<span class="badge">進行中</span>' : next ? '<span class="badge next">下一項</span>' : "";
-      const block = blocks.find((b) => b.task === cell.task && b.startMin === cell.startMin);
-      const place = placeText(cell.task);
-      return `<td${span} class="mine-block${on ? " on" : ""}"><div class="task-name">${esc(cell.task)}${badge}</div><div class="meta">${esc(rangeText(cell.startMin, cell.endMin))}${place ? ` · ${esc(place)}` : ""}</div><div class="meta">${block ? crewNote(sheet, block) : ""}</div></td>`;
-    }).join("");
-    const rowOn = live && row.startMin <= nowMin && nowMin < row.endMin ? ' class="now-row"' : "";
-    return `<tr${rowOn}><th>${esc(formatMin(row.startMin))}</th>${cells}</tr>`;
-  }).join("");
-  return `<div class="grid-wrap"><table class="grid mine"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+function renderDutyDay(day, nowMin, today) {
+  const sheet = sheetOf(day.id);
+  const person = sheet ? personRecord(sheet, state.personId) : null;
+  const name = sheet ? personName(sheet, state.personId) : state.personId;
+  const away = person?.absent ? "・不會去" : "";
+  let body = "";
+  if (!sheet) body = "";
+  else if (person?.absent) body = '<p class="empty">這天不會去。</p>';
+  else {
+    const blocks = scheduleFor(sheet, state.personId);
+    const live = day.date === today;
+    const nextStart = live
+      ? blocks.filter((block) => block.startMin > nowMin).map((block) => block.startMin).sort((a, b) => a - b)[0] ?? null
+      : null;
+    body = blocks.length
+      ? blocks.map((block) => {
+        const key = `${day.id}:${block.task}`;
+        const pressed = state.pickedTask === key;
+        const on = live && block.startMin <= nowMin && nowMin < block.endMin;
+        const next = live && block.startMin === nextStart;
+        const badge = on ? '<span class="badge">進行中</span>' : next ? '<span class="badge next">下一項</span>' : "";
+        const place = taskMeta(block.task);
+        return `<button type="button" class="duty-card${pressed ? " on" : ""}" data-pick="${esc(key)}" aria-pressed="${pressed ? "true" : "false"}"><div class="task-name">${esc(block.task)}${badge}</div><div class="meta">${esc(rangeText(block.startMin, block.endMin))}${place ? ` · ${esc(place)}` : ""}</div><div class="meta">${crewNote(sheet, block)}</div></button>`;
+      }).join("")
+      : '<p class="empty">這天沒有排到任務。</p>';
+  }
+  return `<section><h2>${esc(name)}・${esc(dayLabel(day))}${esc(away)}</h2>${body}</section>`;
 }
 
 function renderMine() {
-  if (!state.personId) {
-    return `<p class="empty">選一次姓名，這支手機會記住。把上方的專屬連結貼到 LINE，同仁打開就直接看到自己的任務。</p>`;
-  }
   const now = new Date();
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const today = localDateKey(now);
-  return DAYS.map((day) => {
-    const sheet = sheetOf(day.id);
-    const blocks = sheet ? scheduleFor(sheet, state.personId) : [];
-    const name = sheet ? personName(sheet, state.personId) : state.personId;
-    return `<section><h2>${esc(name)}・${esc(dayLabel(day))}</h2>${
-      sheet ? renderTimeline(sheet, blocks, day.date === today, nowMin) : ""
-    }</section>`;
-  }).join("");
+  const list = state.personId
+    ? DAYS.map((day) => renderDutyDay(day, nowMin, today)).join("")
+    : '<p class="empty">選一次姓名。點任務之後，右邊的圖會標出作業位置。</p>';
+  const tools = state.editing
+    ? `<button id="add-block" type="button">新增區塊</button><button id="edit-spots" type="button" aria-pressed="true">結束調整</button><button id="save-spots" type="button">儲存位置</button>`
+    : `<button id="edit-spots" type="button" aria-pressed="false">調整標記</button>`;
+  const help = state.editing
+    ? "拖曳方塊可移動，拉右下角可改大小。可新增、改名或刪除區塊。展開下方任務可勾選要顯示的區塊，可複選。完成後按儲存位置。"
+    : "左邊是你這兩天的任務。點一項，右邊的圖會標出作業位置。";
+  const editor = state.editing ? `${dayButtons()}${renderBlockEditor()}${renderTaskCatalog()}` : "";
+  return `<p class="now-tools">${tools}</p><p class="note">${esc(help)}${state.spotMessage ? ` ${esc(state.spotMessage)}` : ""}</p><div class="duty-split"><div class="duty-list">${list}</div>${renderPlan(highlightAreas())}</div>${editor}`;
 }
 
 function renderGrid() {
@@ -249,6 +264,16 @@ function placeText(task) {
   return placeLabel(placeFor(task));
 }
 
+function highlightAreas() {
+  const areas = new Set();
+  const picked = taskFromKey(state.pickedTask);
+  if (picked) areasForTask(picked).forEach((area) => areas.add(area));
+  if (state.editing) {
+    for (const key of state.openTasks) areasForTask(taskFromKey(key)).forEach((area) => areas.add(area));
+  }
+  return areas;
+}
+
 function rectStyle(rect) {
   return `left:${rect.left}%;top:${rect.top}%;width:${rect.width}%;height:${rect.height}%`;
 }
@@ -280,32 +305,22 @@ function renderBlockPicks(task) {
   return `<fieldset class="block-picks"><legend>顯示區塊（可複選）</legend>${boxes}</fieldset>`;
 }
 
-function renderByTask() {
+function renderTaskCatalog() {
   const day = dayById(state.dayId);
   const sheet = sheetOf(day.id);
   if (!sheet) return "";
-  const openAreas = new Set();
-  const tasks = sheet.tasks.map((task) => {
+  return sheet.tasks.map((task) => {
     const key = `${day.id}:${task}`;
     const open = state.openTasks.has(key);
-    if (open) areasForTask(task).forEach((area) => openAreas.add(area));
     const rows = sheet.assignments
       .filter((a) => a.task === task)
       .sort((a, b) => a.startMin - b.startMin)
       .map((a) => `<li>${esc(rangeText(a.startMin, a.endMin))}　${namesHtml(sheet, a.ids)}</li>`)
       .join("");
-    const where = taskMeta(task);
-    return `<details data-key="${esc(key)}"${open ? " open" : ""}><summary>${esc(task)}<span class="meta">　${esc(where)}</span></summary>${renderBlockPicks(task)}<ul>${
+    return `<details data-key="${esc(key)}"${open ? " open" : ""}><summary>${esc(task)}<span class="meta">　${esc(taskMeta(task))}</span></summary>${renderBlockPicks(task)}<ul>${
       rows || '<li class="empty">沒有安排</li>'
     }</ul></details>`;
   }).join("");
-  const tools = state.editing
-    ? `<button id="add-block" type="button">新增區塊</button><button id="edit-spots" type="button" aria-pressed="true">結束調整</button><button id="save-spots" type="button">儲存位置</button>`
-    : `<button id="edit-spots" type="button" aria-pressed="false">調整標記</button>`;
-  const help = state.editing
-    ? "拖曳方塊可移動，拉右下角可改大小。可新增、改名或刪除區塊。展開任務後勾選要顯示的區塊，可複選。完成後按儲存位置。"
-    : "點任務名稱展開人員，圖上會標出這個任務的區塊。要新增、改名，或改每個任務顯示哪些區塊，按調整標記。";
-  return `${dayButtons()}<p class="now-tools">${tools}</p><p class="note">${esc(help)}${state.spotMessage ? ` ${esc(state.spotMessage)}` : ""}</p>${renderPlan(openAreas)}${renderBlockEditor()}${tasks}`;
 }
 
 function renderNow() {
@@ -321,7 +336,8 @@ function renderNow() {
   const active = activeAssignments(sheet, minute);
   const staffed = [];
   for (const task of sheet.tasks) {
-    const ids = [...new Set(active.filter((a) => a.task === task).flatMap((a) => a.ids))];
+    const ids = [...new Set(active.filter((a) => a.task === task).flatMap((a) => a.ids))]
+      .filter((id) => !personRecord(sheet, id)?.absent);
     if (!ids.length) continue;
     const place = placeText(task);
     staffed.push(`<article class="card"><div class="task-name">${esc(task)}</div>${place ? `<div class="meta">${esc(place)}</div>` : ""}<div>${namesHtml(sheet, ids)}</div></article>`);
@@ -339,13 +355,19 @@ function renderCheck() {
     const sheet = sheetOf(day.id);
     if (!sheet) return "";
     const issues = findIssues(sheet);
+    const noTask = issues.unassigned.filter((p) => !p.absent);
     const parts = [];
-    if (!issues.unassigned.length && !issues.unknownIds.length && !issues.overlaps.length) {
+    if (!noTask.length && !issues.unknownIds.length && !issues.overlaps.length) {
       parts.push('<p class="empty">沒有發現問題。</p>');
     }
-    if (issues.unassigned.length) {
-      parts.push(`<h3>沒排到任務（${issues.unassigned.length}）</h3>`);
-      parts.push(`<p>${issues.unassigned.map((p) => esc(`${p.id} ${p.name}`)).join("、")}</p>`);
+    if (noTask.length) {
+      parts.push(`<h3>沒排到任務（${noTask.length}）</h3>`);
+      parts.push(`<p>${noTask.map((p) => esc(`${p.id} ${p.name}`)).join("、")}</p>`);
+    }
+    if (issues.absent.length) {
+      const scheduled = new Set(sheet.assignments.flatMap((a) => a.ids));
+      parts.push(`<h3>不會去（${issues.absent.length}）</h3>`);
+      parts.push(`<p>${issues.absent.map((p) => esc(`${p.id} ${p.name}${scheduled.has(p.id) ? "（表上仍有任務）" : ""}`)).join("、")}</p>`);
     }
     if (issues.unknownIds.length) {
       parts.push("<h3>對不到名冊的編號</h3>");
@@ -371,11 +393,7 @@ function taskFromKey(key) {
 }
 
 function syncHotspots() {
-  const openAreas = new Set();
-  document.querySelectorAll("details[data-key]").forEach((node) => {
-    if (!node.open) return;
-    areasForTask(taskFromKey(node.dataset.key)).forEach((area) => openAreas.add(area));
-  });
+  const openAreas = highlightAreas();
   document.querySelectorAll(".hotspot").forEach((spot) => {
     spot.classList.toggle("on", openAreas.has(spot.dataset.area));
   });
@@ -395,7 +413,7 @@ function renderView() {
     });
     status.textContent = state.error
       ? `更新失敗，畫面仍是 ${clock} 的資料`
-      : `已更新 ${clock} · 版9`;
+      : `已更新 ${clock} · 版11`;
     status.className = state.error ? "error" : "";
   }
   $("tabs").innerHTML = VIEWS.map(([id, label]) => {
@@ -408,7 +426,7 @@ function renderView() {
       state.notice ? ` ${esc(state.notice)}` : ""
     }</p>`;
   $("main").className = state.view === "grid" ? "wide" : "";
-  const views = { mine: renderMine, grid: renderGrid, bytask: renderByTask, now: renderNow, check: renderCheck };
+  const views = { mine: renderMine, grid: renderGrid, now: renderNow, check: renderCheck };
   const banner = state.error && state.sheets ? `<p class="banner">${esc(state.error)}</p>` : "";
   $("main").innerHTML = state.sheets
     ? banner + views[state.view]()
@@ -553,6 +571,12 @@ document.body.addEventListener("click", async (event) => {
     saveHotspots();
     return;
   }
+  const pick = event.target.closest("[data-pick]");
+  if (pick) {
+    state.pickedTask = togglePickedTask(state.pickedTask, pick.dataset.pick);
+    render();
+    return;
+  }
   if (event.target.id === "copy-link") {
     if (!state.personId) {
       state.notice = "請先選擇姓名。";
@@ -636,7 +660,7 @@ if (location.protocol === "file:") {
     .then((data) => {
       if (state.editing || drag) return;
       state.plan = parsePlan(data);
-      if (state.view === "bytask") render();
+      if (state.view === "mine") render();
     })
     .catch(() => {});
   refresh();

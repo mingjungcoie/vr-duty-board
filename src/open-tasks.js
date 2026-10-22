@@ -7,3 +7,8 @@ export function recordDetailsToggle(openTasks, key, isOpen, isConnected) {
   else next.delete(key);
   return next;
 }
+
+export function togglePickedTask(current, key) {
+  if (!key) return current || "";
+  return current === key ? "" : key;
+}

@@ -23,12 +23,16 @@ import {
 } from "./plan.js";
 import { personBlockColor } from "./block-color.js";
 import { boardHeight } from "./board-fit.js";
+import { reserveCollapsed } from "./reserve-row.js";
+import { showStaffTools } from "./publish-mode.js";
+
+const staffTools = showStaffTools(location.hostname);
 
 const VIEWS = [
   ["grid", "總表"],
   ["mine", "我的任務"],
   ["now", "現在"],
-  ["check", "檢查"],
+  ...(staffTools ? [["check", "檢查"]] : []),
 ];
 
 const state = {
@@ -45,6 +49,7 @@ const state = {
   editing: false,
   plan: null,
   spotMessage: "",
+  reserveOpen: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -190,14 +195,23 @@ function renderMine() {
   const list = state.personId
     ? DAYS.map((day) => renderDutyDay(day, nowMin, today)).join("")
     : '<p class="empty">選一次姓名。點任務之後，平面圖會標出作業位置。</p>';
-  const tools = state.editing
-    ? `<button id="add-block" type="button">新增區塊</button><button id="edit-spots" type="button" aria-pressed="true">結束調整</button><button id="save-spots" type="button">儲存位置</button>`
-    : `<button id="edit-spots" type="button" aria-pressed="false">調整標記</button>`;
-  const help = state.editing
+  const editing = staffTools && state.editing;
+  const tools = !staffTools
+    ? ""
+    : editing
+      ? `<button id="add-block" type="button">新增區塊</button><button id="edit-spots" type="button" aria-pressed="true">結束調整</button><button id="save-spots" type="button">儲存位置</button>`
+      : `<button id="edit-spots" type="button" aria-pressed="false">調整標記</button>`;
+  const help = editing
     ? "拖曳方塊可移動，拉右下角可改大小。可新增、改名或刪除區塊。展開下方任務可勾選要顯示的區塊，可複選。完成後按儲存位置。"
     : "這裡是你這兩天的任務。點一項，平面圖會標出作業位置。";
-  const editor = state.editing ? `${dayButtons()}${renderBlockEditor()}${renderTaskCatalog()}` : "";
-  return `<p class="now-tools">${tools}</p><p class="note">${esc(help)}${state.spotMessage ? ` ${esc(state.spotMessage)}` : ""}</p><div class="duty-split"><div class="duty-list">${list}</div>${renderPlan(highlightAreas())}</div>${editor}`;
+  const editor = editing ? `${dayButtons()}${renderBlockEditor()}${renderTaskCatalog()}` : "";
+  const toolBar = tools ? `<p class="now-tools">${tools}</p>` : "";
+  return `${toolBar}<p class="note">${esc(help)}${state.spotMessage ? ` ${esc(state.spotMessage)}` : ""}</p><div class="duty-split"><div class="duty-list">${list}</div>${renderPlan(highlightAreas())}</div>${editor}`;
+}
+
+function reserveButton(expanded) {
+  const label = expanded ? "收合" : "展開";
+  return `<button type="button" class="reserve-toggle" data-toggle-reserve aria-expanded="${expanded ? "true" : "false"}">${label}</button>`;
 }
 
 function renderGrid() {
@@ -208,6 +222,9 @@ function renderGrid() {
   const cols = byTime.map(() => "<col>").join("");
   const head = byTime.map((row) => `<th>${esc(formatMin(row.startMin))}</th>`).join("");
   const body = sheet.tasks.map((task, index) => {
+    if (reserveCollapsed(task, state.reserveOpen)) {
+      return `<tr class="reserve is-collapsed"><th>${reserveButton(false)}預備人員</th><td colspan="${byTime.length}"></td></tr>`;
+    }
     let rowColor = "";
     const cells = byTime.map((row) => {
       const cell = row.cells[index];
@@ -220,10 +237,11 @@ function renderGrid() {
       return `<td${span}${painted}>${namesHtml(sheet, cell.ids)}</td>`;
     }).join("");
     const mark = rowColor ? ` style="box-shadow:inset 6px 0 0 ${rowColor}"` : "";
-    return `<tr><th${mark}>${esc(task)}</th>${cells}</tr>`;
+    const toggle = task === "預備人員" ? reserveButton(true) : "";
+    return `<tr><th${mark}>${toggle}${esc(task)}</th>${cells}</tr>`;
   }).join("");
   const minWidth = `min-width:calc(10rem + ${byTime.length} * 5.6rem)`;
-  return `${dayButtons()}<p class="note board-note">任務在左、時間在上。選了姓名之後，只標出這個人的班，同一項任務用同一種顏色。在表格裡上下左右捲動，不會拉動整頁。</p><div class="grid-wrap board-wrap"><table class="grid board" style="${minWidth}"><colgroup><col class="task-col">${cols}</colgroup><thead><tr><th>任務</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  return `${dayButtons()}<p class="note board-note">任務在左、時間在上。選了姓名之後，只標出這個人的班，同一項任務用同一種顏色。在表格裡上下左右捲動，不會拉動整頁。預備人員預設收合，可按展開。</p><div class="grid-wrap board-wrap"><table class="grid board" style="${minWidth}"><colgroup><col class="task-col">${cols}</colgroup><thead><tr><th>任務</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function fitBoard() {
@@ -271,7 +289,7 @@ function highlightAreas() {
   const areas = new Set();
   const picked = taskFromKey(state.pickedTask);
   if (picked) areasForTask(picked).forEach((area) => areas.add(area));
-  if (state.editing) {
+  if (staffTools && state.editing) {
     for (const key of state.openTasks) areasForTask(taskFromKey(key)).forEach((area) => areas.add(area));
   }
   return areas;
@@ -287,12 +305,12 @@ function renderPlan(openAreas) {
     const caption = rect.label === "3樓外其他區域" ? " caption" : "";
     return `<span class="hotspot${on}${caption}" data-area="${esc(area)}" style="${rectStyle(rect)}"><span class="tag">${esc(rect.label)}</span><span class="handle"></span></span>`;
   }).join("");
-  const editing = state.editing ? " editing" : "";
+  const editing = staffTools && state.editing ? " editing" : "";
   return `<figure class="plan${editing}"><img src="assets/erca-plan.png" alt="ERCA 三樓緊急疏散逃生圖"><div class="spots">${spots}</div></figure>`;
 }
 
 function renderBlockEditor() {
-  if (!state.editing) return "";
+  if (!staffTools || !state.editing) return "";
   const items = Object.entries(hotspotMap()).map(([id, rect]) => (
     `<li><input data-block-label="${esc(id)}" value="${esc(rect.label)}" aria-label="區塊名稱" maxlength="40"><button type="button" data-delete-block="${esc(id)}">刪除</button></li>`
   )).join("");
@@ -300,7 +318,7 @@ function renderBlockEditor() {
 }
 
 function renderBlockPicks(task) {
-  if (!state.editing) return "";
+  if (!staffTools || !state.editing) return "";
   const selected = new Set(areasForTask(task));
   const boxes = Object.entries(hotspotMap()).map(([id, rect]) => {
     const checked = selected.has(id) ? " checked" : "";
@@ -404,6 +422,7 @@ function syncHotspots() {
 }
 
 function renderView() {
+  if (!staffTools && state.view === "check") state.view = "grid";
   const title = state.sheets?.[DAYS[0].id]?.title || "VR研討會工作分工";
   $("title").textContent = title;
   document.title = title;
@@ -417,7 +436,7 @@ function renderView() {
     });
     status.textContent = state.error
       ? `更新失敗，畫面仍是 ${clock} 的資料`
-      : `已更新 ${clock} · 版17`;
+      : `已更新 ${clock} · 版19`;
     status.className = state.error ? "error" : "";
   }
   $("tabs").innerHTML = VIEWS.map(([id, label]) => {
@@ -467,6 +486,7 @@ let drag = null;
 let swallowClick = false;
 
 function blockButtonAction(target) {
+  if (!staffTools) return false;
   if (target.id === "add-block") {
     const plan = currentPlan();
     state.plan = { ...plan, blocks: addBlock(plan.blocks) };
@@ -490,7 +510,7 @@ document.body.addEventListener("pointerdown", (event) => {
     setTimeout(() => { swallowClick = false; }, 0);
     return;
   }
-  if (!state.editing) return;
+  if (!staffTools || !state.editing) return;
   const spot = event.target.closest(".hotspot");
   if (!spot) return;
   const plan = spot.closest(".plan");
@@ -551,6 +571,11 @@ document.body.addEventListener("click", async (event) => {
     render();
     return;
   }
+  if (event.target.closest("[data-toggle-reserve]")) {
+    state.reserveOpen = !state.reserveOpen;
+    render();
+    return;
+  }
   const day = event.target.closest("[data-day]");
   if (day) {
     state.dayId = day.dataset.day;
@@ -566,12 +591,14 @@ document.body.addEventListener("click", async (event) => {
     return;
   }
   if (event.target.id === "edit-spots") {
+    if (!staffTools) return;
     state.editing = !state.editing;
     state.spotMessage = "";
     render();
     return;
   }
   if (event.target.id === "save-spots") {
+    if (!staffTools) return;
     saveHotspots();
     return;
   }
@@ -599,7 +626,7 @@ document.body.addEventListener("click", async (event) => {
 
 document.body.addEventListener("input", (event) => {
   const id = event.target.dataset.blockLabel;
-  if (!id) return;
+  if (!id || !staffTools) return;
   const plan = currentPlan();
   state.plan = { ...plan, blocks: renameBlock(plan.blocks, id, event.target.value) };
   const tag = document.querySelector(`.hotspot[data-area="${CSS.escape(id)}"] .tag`);
@@ -614,7 +641,7 @@ document.body.addEventListener("change", (event) => {
     return;
   }
   const labelId = event.target.dataset.blockLabel;
-  if (labelId) {
+  if (labelId && staffTools) {
     const plan = currentPlan();
     const blocks = commitBlockLabel(plan.blocks, labelId);
     if (blocks === plan.blocks) return;
@@ -624,7 +651,7 @@ document.body.addEventListener("change", (event) => {
   }
   const task = event.target.dataset.task;
   const blockId = event.target.dataset.block;
-  if (event.target.type === "checkbox" && task && blockId) {
+  if (staffTools && event.target.type === "checkbox" && task && blockId) {
     const plan = currentPlan();
     state.plan = {
       ...plan,

@@ -456,6 +456,20 @@ table.grid.board tbody th {
   font-weight: 600;
 }
 
+.reserve-toggle {
+  display: block;
+  margin: 0 auto 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--head);
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+tr.reserve.is-collapsed td { color: var(--muted); }
+
 table.grid.board td.block {
   color: var(--ink);
   border-radius: 6px;

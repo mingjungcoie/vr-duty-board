@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "pages": "node scripts/stage-pages.mjs && npx wrangler pages deploy dist --project-name vr-duty-board --commit-dirty=true"
   }
 }

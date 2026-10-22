@@ -22,10 +22,11 @@ import {
   serializePlan,
 } from "./plan.js";
 import { personBlockColor } from "./block-color.js";
+import { boardHeight } from "./board-fit.js";
 
 const VIEWS = [
-  ["mine", "我的任務"],
   ["grid", "總表"],
+  ["mine", "我的任務"],
   ["now", "現在"],
   ["check", "檢查"],
 ];
@@ -34,7 +35,7 @@ const state = {
   sheets: null,
   error: "",
   updatedAt: null,
-  view: "mine",
+  view: "grid",
   dayId: DAYS[0].id,
   personId: "",
   previewTime: "08:30",
@@ -188,13 +189,13 @@ function renderMine() {
   const today = localDateKey(now);
   const list = state.personId
     ? DAYS.map((day) => renderDutyDay(day, nowMin, today)).join("")
-    : '<p class="empty">選一次姓名。點任務之後，右邊的圖會標出作業位置。</p>';
+    : '<p class="empty">選一次姓名。點任務之後，平面圖會標出作業位置。</p>';
   const tools = state.editing
     ? `<button id="add-block" type="button">新增區塊</button><button id="edit-spots" type="button" aria-pressed="true">結束調整</button><button id="save-spots" type="button">儲存位置</button>`
     : `<button id="edit-spots" type="button" aria-pressed="false">調整標記</button>`;
   const help = state.editing
     ? "拖曳方塊可移動，拉右下角可改大小。可新增、改名或刪除區塊。展開下方任務可勾選要顯示的區塊，可複選。完成後按儲存位置。"
-    : "左邊是你這兩天的任務。點一項，右邊的圖會標出作業位置。";
+    : "這裡是你這兩天的任務。點一項，平面圖會標出作業位置。";
   const editor = state.editing ? `${dayButtons()}${renderBlockEditor()}${renderTaskCatalog()}` : "";
   return `<p class="now-tools">${tools}</p><p class="note">${esc(help)}${state.spotMessage ? ` ${esc(state.spotMessage)}` : ""}</p><div class="duty-split"><div class="duty-list">${list}</div>${renderPlan(highlightAreas())}</div>${editor}`;
 }
@@ -221,19 +222,21 @@ function renderGrid() {
     const mark = rowColor ? ` style="box-shadow:inset 6px 0 0 ${rowColor}"` : "";
     return `<tr><th${mark}>${esc(task)}</th>${cells}</tr>`;
   }).join("");
-  return `${dayButtons()}<p class="note board-note">任務在左、時間在上。選了姓名之後，只標出這個人的班，同一項任務用同一種顏色。手機上可左右滑動查看。</p><div class="grid-wrap"><table class="grid board"><colgroup><col class="task-col">${cols}</colgroup><thead><tr><th>任務</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const minWidth = `min-width:calc(10rem + ${byTime.length} * 5.6rem)`;
+  return `${dayButtons()}<p class="note board-note">任務在左、時間在上。選了姓名之後，只標出這個人的班，同一項任務用同一種顏色。在表格裡上下左右捲動，不會拉動整頁。</p><div class="grid-wrap board-wrap"><table class="grid board" style="${minWidth}"><colgroup><col class="task-col">${cols}</colgroup><thead><tr><th>任務</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function fitBoard() {
   const wrap = document.querySelector(".grid-wrap");
   const table = document.querySelector("table.board");
   if (!wrap || !table || state.view !== "grid") return;
-  table.style.zoom = "1";
-  wrap.style.height = "";
-  if (window.matchMedia("(max-width: 760px)").matches) return;
-  const available = window.innerHeight - wrap.getBoundingClientRect().top - 8;
-  const needed = table.getBoundingClientRect().height;
-  if (available > 120 && needed > available) table.style.zoom = String(available / needed);
+  const height = boardHeight({
+    viewportHeight: window.innerHeight,
+    boardTop: wrap.getBoundingClientRect().top + window.scrollY,
+    stickyHeight: $("tabs").offsetHeight,
+    mobile: window.matchMedia("(max-width: 760px)").matches,
+  });
+  wrap.style.height = `${height}px`;
 }
 
 function currentPlan() {
@@ -281,7 +284,8 @@ function rectStyle(rect) {
 function renderPlan(openAreas) {
   const spots = Object.entries(hotspotMap()).map(([area, rect]) => {
     const on = openAreas.has(area) ? " on" : "";
-    return `<span class="hotspot ${on}" data-area="${esc(area)}" style="${rectStyle(rect)}"><span class="tag">${esc(rect.label)}</span><span class="handle"></span></span>`;
+    const caption = rect.label === "3樓外其他區域" ? " caption" : "";
+    return `<span class="hotspot${on}${caption}" data-area="${esc(area)}" style="${rectStyle(rect)}"><span class="tag">${esc(rect.label)}</span><span class="handle"></span></span>`;
   }).join("");
   const editing = state.editing ? " editing" : "";
   return `<figure class="plan${editing}"><img src="assets/erca-plan.png" alt="ERCA 三樓緊急疏散逃生圖"><div class="spots">${spots}</div></figure>`;
@@ -413,7 +417,7 @@ function renderView() {
     });
     status.textContent = state.error
       ? `更新失敗，畫面仍是 ${clock} 的資料`
-      : `已更新 ${clock} · 版11`;
+      : `已更新 ${clock} · 版17`;
     status.className = state.error ? "error" : "";
   }
   $("tabs").innerHTML = VIEWS.map(([id, label]) => {
@@ -655,7 +659,7 @@ if (location.protocol === "file:") {
   state.error = "請不要直接點開這個檔案。在瀏覽器網址列貼上 http://127.0.0.1:8765/ 再按 Enter。";
   render();
 } else {
-  fetch("/src/hotspots.json", { cache: "no-store" })
+  fetch(new URL("src/hotspots.json", document.baseURI), { cache: "no-store" })
     .then((res) => (res.ok ? res.json() : Promise.reject()))
     .then((data) => {
       if (state.editing || drag) return;

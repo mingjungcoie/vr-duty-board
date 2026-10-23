@@ -25,6 +25,7 @@ import { personBlockColor } from "./block-color.js";
 import { boardHeight } from "./board-fit.js";
 import { reserveCollapsed } from "./reserve-row.js";
 import { showStaffTools } from "./publish-mode.js";
+import { hotspotTagHtml, showsHotspotCaption } from "./hotspot-caption.js";
 
 const staffTools = showStaffTools(location.hostname);
 
@@ -302,8 +303,9 @@ function rectStyle(rect) {
 function renderPlan(openAreas) {
   const spots = Object.entries(hotspotMap()).map(([area, rect]) => {
     const on = openAreas.has(area) ? " on" : "";
-    const caption = rect.label === "3樓外其他區域" ? " caption" : "";
-    return `<span class="hotspot${on}${caption}" data-area="${esc(area)}" style="${rectStyle(rect)}"><span class="tag">${esc(rect.label)}</span><span class="handle"></span></span>`;
+    const caption = showsHotspotCaption(rect.label) ? " caption" : "";
+    const tag = showsHotspotCaption(rect.label) ? hotspotTagHtml(rect.label) : esc(rect.label);
+    return `<span class="hotspot${on}${caption}" data-area="${esc(area)}" style="${rectStyle(rect)}"><span class="tag">${tag}</span><span class="handle"></span></span>`;
   }).join("");
   const editing = staffTools && state.editing ? " editing" : "";
   return `<figure class="plan${editing}"><img src="assets/erca-plan.png" alt="ERCA 三樓緊急疏散逃生圖"><div class="spots">${spots}</div></figure>`;
@@ -436,7 +438,7 @@ function renderView() {
     });
     status.textContent = state.error
       ? `更新失敗，畫面仍是 ${clock} 的資料`
-      : `已更新 ${clock} · 版19`;
+      : `已更新 ${clock} · 版20`;
     status.className = state.error ? "error" : "";
   }
   $("tabs").innerHTML = VIEWS.map(([id, label]) => {
